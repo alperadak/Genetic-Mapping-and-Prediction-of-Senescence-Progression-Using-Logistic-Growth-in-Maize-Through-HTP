@@ -1,0 +1,21 @@
+# Below is the code for illustrating temporal senescence progression across the five time points for each row plot.
+
+df <- read.csv("Senescence.csv")
+
+p1 <- ggplot(df, aes(x = Row1, y = Col1, fill = Senescence)) +
+  geom_tile(color = "white") +
+  scale_fill_gradientn("Senescence \nprogression",
+                       colors = c("green", "brown"), 
+                       values = scales::rescale(c(0, 50, 100)),
+                       space = "Lab"
+  ) +
+  coord_fixed() +
+  facet_grid(Replicate ~ Flight) +
+  scale_x_continuous("Row", breaks = c(1, max(df$Row1, na.rm = TRUE) / 2, max(df$Row1, na.rm = TRUE))) +
+  scale_y_continuous("Column", breaks = c(1, max(df$Col1, na.rm = TRUE) / 2, max(df$Col1, na.rm = TRUE))) +
+  theme(legend.key.height = unit(0.5, 'cm')) +
+  geom_rect(data = rect_df, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+            inherit.aes = FALSE, fill = NA, color = "black", size = 0.5) +
+  geom_label(data = rect_df, aes(x = x_center, y = y_top-1.5, label = Pop), 
+            inherit.aes = FALSE, size = 3, vjust = 0)
+p1
