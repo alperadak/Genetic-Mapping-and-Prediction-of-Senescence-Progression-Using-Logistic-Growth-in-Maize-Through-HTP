@@ -2,7 +2,20 @@
 
 df <- read.csv("Senescence.csv")
 
-p1 <- ggplot(df, aes(x = Row1, y = Col1, fill = Senescence)) +
+rect_df <- df %>%
+  group_by(Pop) %>%
+  summarize(
+    xmin = min(Row1, na.rm = TRUE),
+    xmax = max(Row1, na.rm = TRUE),
+    ymin = min(Col1, na.rm = TRUE),
+    ymax = max(Col1, na.rm = TRUE)
+  ) %>%
+  mutate(
+    x_center = (xmin + xmax) / 2,
+    y_top = ymax + 1  
+  )
+
+p <- ggplot(df, aes(x = Row1, y = Col1, fill = Senescence)) +
   geom_tile(color = "white") +
   scale_fill_gradientn("Senescence \nprogression",
                        colors = c("green", "brown"), 
@@ -18,4 +31,4 @@ p1 <- ggplot(df, aes(x = Row1, y = Col1, fill = Senescence)) +
             inherit.aes = FALSE, fill = NA, color = "black", size = 0.5) +
   geom_label(data = rect_df, aes(x = x_center, y = y_top-1.5, label = Pop), 
             inherit.aes = FALSE, size = 3, vjust = 0)
-p1
+p
