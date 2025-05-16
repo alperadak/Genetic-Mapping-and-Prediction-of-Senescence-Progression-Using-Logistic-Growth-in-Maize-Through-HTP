@@ -1,4 +1,4 @@
-# Below is the code for illustrating temporal senescence progression across the five time points for each row plot.
+# Below is the code for illustrating temporal senescence progression (Figure 2) across the five time points for each row plot.
 
 df <- read.csv("Senescence.csv")
 
