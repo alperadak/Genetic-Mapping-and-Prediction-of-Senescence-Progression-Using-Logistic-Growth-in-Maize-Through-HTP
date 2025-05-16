@@ -1,0 +1,214 @@
+##########################################################################
+################ Logistic Curve Facilitated Genomic Prediction ###########
+##########################################################################
+
+# Clean environment
+rm(list = ls()) 
+
+#############################################
+####### Set Your Working Directory Here #####
+#############################################
+
+# Define your project directory
+base_dir <- "YOUR/PROJECT/DIRECTORY/HERE"  # <<== SET THIS
+
+# Optional: set working directory if needed
+# setwd(base_dir)
+
+########################################
+####### Load Phenotypic Data ##########
+########################################
+
+pheno <- read.csv(file.path(base_dir, "out.csv"))
+names(pheno)[6] <- "Senescence"
+
+library(dplyr)
+pheno <- pheno %>%
+  arrange(genotype, DAP)
+
+head(pheno)
+length(unique(pheno$genotype))
+
+##################################
+####### Genomic GRM Matrix #######
+##################################
+
+library(data.table)
+geno_file <- file.path(base_dir, "geno.numerical.csv")
+geno <- fread(geno_file, header = TRUE) %>% as.data.frame()
+geno <- geno[geno$genotype %in% unique(pheno$genotype), ]
+row.names(geno) <- geno$genotype
+geno <- geno[, -1]
+geno <- rrBLUP::A.mat(geno)
+ZG <- geno
+
+##################################
+####### Phenomic PRM Matrix ######
+##################################
+
+phenomic_file <- file.path(base_dir, "Phenomic", "Phenomic_ExR_NGRDI.csv")
+phenomic <- read.csv(phenomic_file, row.names = 1)
+ZP <- rrBLUP::A.mat(phenomic)
+
+################################
+####### Load Required Libs #####
+################################
+
+library(BGLR)
+
+##########################
+####### Setup CV #########
+##########################
+
+CV1 <- list()
+CV2 <- list()
+CV0 <- list()
+CV00 <- list()
+
+env <- unique(pheno$DAP)
+pheno$env <- as.numeric(pheno$DAP)
+index <- 1
+
+# Define models
+M1 <- list(Grm = list(K = ZG, model = "RKHS"))
+M2 <- list(
+  Grm = list(K = ZG, model = "RKHS"),
+  Prm = list(K = ZP, model = "RKHS")
+)
+
+##############################################
+####### Cross-Validation Loop Starts Here ####
+##############################################
+
+for (j in 1:100) {
+  for (i in 1:length(env)) {
+
+    untested.env <- env[i]
+    cat(">>> Iteration j =", j, "| Environment i =", i, "| Untested env =", untested.env, "\n")
+
+    df <- pheno
+    df$Y2 <- df$Senescence
+    hybrids <- unique(df$genotype)
+
+    # Train/Test split (70/30)
+    set.seed(j)
+    train_hybrids <- sample(hybrids, size = length(hybrids) * 0.7)
+    test_hybrids <- setdiff(hybrids, train_hybrids)
+
+    df$Y2[df$env == untested.env] <- NA
+    df$Y2[!df$genotype %in% train_hybrids] <- NA
+
+    train <- df[df$genotype %in% train_hybrids & df$env != untested.env, ]
+    test  <- df[df$genotype %in% test_hybrids  & df$env != untested.env, ]
+
+    # Logistic growth fitting function
+    fit_sslogis_to_group <- function(df_group) {
+      model <- nls(Y2 ~ SSlogis(DAP, 100, xmid, scal), data = df_group,
+                   start = list(
+                     xmid = mean(df_group$DAP, na.rm = TRUE),
+                     scal = diff(range(df_group$DAP, na.rm = TRUE)) / 10
+                   ))
+      df_group_augmented <- augment(model, df_group)
+      params <- coef(model)
+
+      df_group_augmented$xmid <- params["xmid"]
+      df_group_augmented$scal <- params["scal"]
+      df_group_augmented$Asym <- 100
+
+      fitted <- df_group_augmented$.fitted
+      observed <- df_group_augmented$Senescence
+      R_squared <- 1 - sum((observed - fitted)^2, na.rm = TRUE) / 
+                        sum((observed - mean(observed, na.rm = TRUE))^2, na.rm = TRUE)
+      df_group_augmented$R_squared <- R_squared
+
+      return(df_group_augmented)
+    }
+
+    # Fit logistic model to each genotype in training data
+    results <- train %>%
+      group_by(genotype) %>%
+      do(fit_sslogis_to_group(.)) %>%
+      as.data.frame() %>%
+      dplyr::distinct(genotype, .keep_all = TRUE) %>%
+      dplyr::select(genotype, xmid, scal)
+
+    df2 <- dplyr::left_join(df, results, by = "genotype") %>%
+      dplyr::distinct(genotype, .keep_all = TRUE) %>%
+      dplyr::select(genotype, xmid, scal)
+
+    y_xmid <- as.numeric(df2$xmid)
+    y_scal <- as.numeric(df2$scal)
+
+    # Genomic Prediction: M1
+    fit.xmid_M1 <- BGLR(y = y_xmid, ETA = M1, nIter = 10000, burnIn = 1000, verbose = FALSE)
+    fit.scal_M1 <- BGLR(y = y_scal, ETA = M1, nIter = 10000, burnIn = 1000, verbose = FALSE)
+
+    df2$predicted.xmid_M1 <- fit.xmid_M1$yHat
+    df2$predicted.scal_M1 <- fit.scal_M1$yHat
+
+    # Genomic + Phenomic Prediction: M2
+    fit.xmid_M2 <- BGLR(y = y_xmid, ETA = M2, nIter = 10000, burnIn = 1000, verbose = FALSE)
+    fit.scal_M2 <- BGLR(y = y_scal, ETA = M2, nIter = 10000, burnIn = 1000, verbose = FALSE)
+
+    df2$predicted.xmid_M2 <- fit.xmid_M2$yHat
+    df2$predicted.scal_M2 <- fit.scal_M2$yHat
+
+    # Merge predictions back to full dataset
+    df3 <- dplyr::left_join(df, df2, by = "genotype")
+
+    # Logistic function predictions using predicted parameters
+    df3$predicted.senescence_M1 <- 100 / (1 + exp(-(df3$DAP - df3$predicted.xmid_M1) / df3$predicted.scal_M1))
+    df3$predicted.senescence_M2 <- 100 / (1 + exp(-(df3$DAP - df3$predicted.xmid_M2) / df3$predicted.scal_M2))
+
+    # Split into CV groups
+    df3.CV1 <- df3[df3$genotype %in% train_hybrids & df3$env != untested.env, ]
+    df3.CV2 <- df3[df3$genotype %in% test_hybrids  & df3$env != untested.env, ]
+    df3.CV0 <- df3[df3$genotype %in% train_hybrids & df3$env == untested.env, ]
+    df3.CV00 <- df3[df3$genotype %in% test_hybrids  & df3$env == untested.env, ]
+
+    # Store evaluation metrics
+    CV1[[index]] <- df3.CV1 %>% group_by(env) %>%
+      summarize(
+        cor_M1 = cor(Senescence, predicted.senescence_M1, use = "complete.obs"),
+        rmse_M1 = sqrt(mean((Senescence - predicted.senescence_M1)^2, na.rm = TRUE)),
+        cor_M2 = cor(Senescence, predicted.senescence_M2, use = "complete.obs"),
+        rmse_M2 = sqrt(mean((Senescence - predicted.senescence_M2)^2, na.rm = TRUE))
+      ) %>% as.data.frame()
+
+    CV2[[index]] <- df3.CV2 %>% group_by(env) %>%
+      summarize(
+        cor_M1 = cor(Senescence, predicted.senescence_M1, use = "complete.obs"),
+        rmse_M1 = sqrt(mean((Senescence - predicted.senescence_M1)^2, na.rm = TRUE)),
+        cor_M2 = cor(Senescence, predicted.senescence_M2, use = "complete.obs"),
+        rmse_M2 = sqrt(mean((Senescence - predicted.senescence_M2)^2, na.rm = TRUE))
+      ) %>% as.data.frame()
+
+    CV0[[index]] <- df3.CV0 %>% group_by(env) %>%
+      summarize(
+        cor_M1 = cor(Senescence, predicted.senescence_M1, use = "complete.obs"),
+        rmse_M1 = sqrt(mean((Senescence - predicted.senescence_M1)^2, na.rm = TRUE)),
+        cor_M2 = cor(Senescence, predicted.senescence_M2, use = "complete.obs"),
+        rmse_M2 = sqrt(mean((Senescence - predicted.senescence_M2)^2, na.rm = TRUE))
+      ) %>% as.data.frame()
+
+    CV00[[index]] <- df3.CV00 %>% group_by(env) %>%
+      summarize(
+        cor_M1 = cor(Senescence, predicted.senescence_M1, use = "complete.obs"),
+        rmse_M1 = sqrt(mean((Senescence - predicted.senescence_M1)^2, na.rm = TRUE)),
+        cor_M2 = cor(Senescence, predicted.senescence_M2, use = "complete.obs"),
+        rmse_M2 = sqrt(mean((Senescence - predicted.senescence_M2)^2, na.rm = TRUE))
+      ) %>% as.data.frame()
+
+    index <- index + 1
+  }
+}
+
+##################################
+####### Save Final Results #######
+##################################
+
+library(plyr)
+CV1.out <- ldply(CV1, data.frame)
+CV2.out <- ldply(CV2, data.frame)
+CV0.out <- ldply(CV0, data.frame)
+CV00.out <- ldply(CV00, data.frame)
