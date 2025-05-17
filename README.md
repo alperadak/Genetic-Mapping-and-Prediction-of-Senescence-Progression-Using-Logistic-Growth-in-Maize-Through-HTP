@@ -1,3 +1,4 @@
+![image](https://github.com/user-attachments/assets/07ee8c7e-ef4c-4858-b7fb-bf2e4deb9f1f)
 The following input files were used in the study "A computational framework for modeling and predicting maize senescence: integrating UAV phenotyping, logistic growth, and genomics":
 
 Senescence.csv contains plot-based senescence scores recorded at multiple time points — specifically at 85, 91, 100, 111, and 128 days after planting (DAP). These scores were used as input for statistical modeling to estimate genotypic effects associated with temporal senescence progression (see Section 2.3: Statistical analysis of temporal senescence progression to obtain genotypic effects for details).
