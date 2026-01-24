@@ -108,10 +108,10 @@ Predicted logistic parameters were used to reconstruct full senescence trajector
 
 Prediction performance was evaluated using 100 repeated cross-validation iterations under four scenarios:
 
-- **CV1**: Tested genotypes in tested environments  
-- **CV2**: Untested genotypes in tested environments  
-- **CV0**: Tested genotypes in untested environments  
-- **CV00**: Untested genotypes in untested environments  
+- **CV1**: Tested genotypes in tested senescence time(s)  
+- **CV2**: Untested genotypes in tested senescence time(s)  
+- **CV0**: Tested genotypes in untested senescence time(s)  
+- **CV00**: Untested genotypes in untested senescence time(s)  
 
 Model performance was assessed using correlation and root mean square error (RMSE) between observed and predicted senescence values.
 
