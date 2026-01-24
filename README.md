@@ -80,11 +80,11 @@ The overall analysis consists of the following steps:
 Senescence progression for each genotype was modeled using a logistic growth function:
 
 S(t) = 100 / (1 + exp(-(t - x_mid) / scal))
-where:
 
-- \(x_{mid}\) represents the inflection point (timing of rapid senescence),
-- \(scal\) controls the rate of senescence progression,
-- the asymptote was fixed at 100% senescence.
+where:
+- t is days after planting (DAP),
+- x_mid is the inflection point,
+- scal controls the rate of senescence progression.
 
 Logistic models were fitted independently for each genotype using non-linear least squares. The estimated parameters were treated as quantitative traits in downstream prediction analyses.
 
